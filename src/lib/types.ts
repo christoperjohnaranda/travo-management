@@ -5,14 +5,20 @@ export type Vehicle = {
   plateNumber: string;
   color: string;
   photoUrl: string | null;
-  annualTaxDue: string;
-  stnkFiveYearDue: string;
+  annualTaxDue: string | null;
+  annualTaxStatus: AnnualTaxStatus;
+  stnkFiveYearDue: string | null;
+  stnkStatus: StnkStatus;
   kirStatus: KirStatus;
   kirDue: string | null;
   createdAt: string;
 };
 
 export type VehicleInput = Omit<Vehicle, "createdAt">;
+
+export type AnnualTaxStatus = "known" | "unknown";
+
+export type StnkStatus = "active" | "missing" | "lost";
 
 export type KirStatus = "active" | "missing" | "lost";
 

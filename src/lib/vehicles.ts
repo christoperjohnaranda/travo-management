@@ -12,7 +12,9 @@ export const getDemoVehicles = (): Vehicle[] => [
     color: "Putih",
     photoUrl: null,
     annualTaxDue: offsetDate(13),
+    annualTaxStatus: "known",
     stnkFiveYearDue: offsetDate(142),
+    stnkStatus: "active",
     kirStatus: "active",
     kirDue: offsetDate(5),
     createdAt: new Date().toISOString(),
@@ -25,7 +27,9 @@ export const getDemoVehicles = (): Vehicle[] => [
     color: "Hijau",
     photoUrl: null,
     annualTaxDue: offsetDate(78),
+    annualTaxStatus: "known",
     stnkFiveYearDue: offsetDate(18),
+    stnkStatus: "active",
     kirStatus: "active",
     kirDue: offsetDate(42),
     createdAt: new Date().toISOString(),
@@ -38,7 +42,9 @@ export const getDemoVehicles = (): Vehicle[] => [
     color: "Putih",
     photoUrl: null,
     annualTaxDue: offsetDate(-3),
+    annualTaxStatus: "known",
     stnkFiveYearDue: offsetDate(260),
+    stnkStatus: "active",
     kirStatus: "active",
     kirDue: offsetDate(-2),
     createdAt: new Date().toISOString(),
@@ -51,7 +57,9 @@ export const getDemoVehicles = (): Vehicle[] => [
     color: "Biru",
     photoUrl: null,
     annualTaxDue: offsetDate(114),
+    annualTaxStatus: "known",
     stnkFiveYearDue: offsetDate(-9),
+    stnkStatus: "active",
     kirStatus: "active",
     kirDue: offsetDate(96),
     createdAt: new Date().toISOString(),
@@ -62,10 +70,17 @@ export const readDemoVehicles = () => {
   const raw = window.localStorage.getItem(STORAGE_KEY);
   if (raw) {
     try {
-      type StoredVehicle = Omit<Vehicle, "kirStatus" | "kirDue"> & { kirStatus?: Vehicle["kirStatus"]; kirDue?: string | null };
+      type StoredVehicle = Omit<Vehicle, "annualTaxStatus" | "kirStatus" | "kirDue" | "stnkStatus"> & {
+        annualTaxStatus?: Vehicle["annualTaxStatus"];
+        kirStatus?: Vehicle["kirStatus"];
+        kirDue?: string | null;
+        stnkStatus?: Vehicle["stnkStatus"];
+      };
       const saved = JSON.parse(raw) as StoredVehicle[];
       return saved.map((vehicle) => ({
         ...vehicle,
+        annualTaxStatus: vehicle.annualTaxStatus ?? (vehicle.annualTaxDue ? "known" : "unknown"),
+        stnkStatus: vehicle.stnkStatus ?? (vehicle.stnkFiveYearDue ? "active" : "missing"),
         kirStatus: vehicle.kirStatus ?? (vehicle.kirDue ? "active" : "missing"),
         kirDue: vehicle.kirDue ?? null,
       }));

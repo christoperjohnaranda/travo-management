@@ -16,10 +16,11 @@
 .field select{height:37px;padding:0 10px;border:1px solid #e4ebe7;border-radius:6px;outline:0;background:#fff;color:#314a41;font-size:11px;font-weight:400}
 .field select:focus{border-color:#8cbca6;box-shadow:0 0 0 3px rgba(8,123,98,.07)}
 .date-grid .field:last-child{grid-column:auto}
-.kir-note{grid-column:1/-1;min-height:58px;padding:10px 11px;border:1px solid #f0e4c9;border-radius:7px;background:#fffbf2;display:flex;flex-direction:column;justify-content:center;gap:5px}
-.kir-note strong{font-size:10px;color:#896a2c}
-.kir-note small{font-size:9px;color:#9b8b67;line-height:1.5}
+.document-note{grid-column:1/-1;min-height:58px;padding:10px 11px;border:1px solid #f0e4c9;border-radius:7px;background:#fffbf2;display:flex;flex-direction:column;justify-content:center;gap:5px}
+.document-note strong{font-size:10px;color:#896a2c}
+.document-note small{font-size:9px;color:#9b8b67;line-height:1.5}
 .status-unknown{background:#fff5e3;color:#a36c16}
+.unknown-dot{background:#c3862d}
 
 :root{--ink:#0D1B2A;--soft:#526070;--muted:#7E8996;--line:#DFE4EA;--canvas:#F2F4F7;--brand-navy:#0D1B2A;--brand-orange:#FF6A00;--brand-light:#F2F4F7}
 body{background:var(--brand-light);color:var(--brand-navy)}

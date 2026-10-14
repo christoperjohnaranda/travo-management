@@ -45,17 +45,37 @@ export const documentTitle = (kind: DocumentKind) => {
 };
 
 export const getVehicleAlerts = (vehicle: Vehicle): AlertItem[] => {
-  const definitions: Array<{ kind: DocumentKind; days: number }> = [
-    { kind: "annualTax", days: 30 },
-    { kind: "stnkFiveYear", days: 30 },
-  ];
-  const documentAlerts = definitions
-    .map(({ kind, days }) => ({
-      vehicle,
-      kind,
-      status: documentStatus(documentDate(vehicle, kind), days),
-      title: documentTitle(kind),
-    }));
+  const annualTaxKnown = vehicle.annualTaxStatus === "known" && Boolean(vehicle.annualTaxDue);
+  const annualTaxAlert: AlertItem = {
+    vehicle,
+    kind: "annualTax",
+    status: annualTaxKnown
+      ? documentStatus(vehicle.annualTaxDue, 30)
+      : {
+          level: "unknown",
+          daysLeft: Number.POSITIVE_INFINITY,
+          label: "Tanggal pajak belum diketahui",
+        },
+    title: annualTaxKnown
+      ? documentTitle("annualTax")
+      : "Pajak tahunan · tanggal belum diketahui",
+  };
+
+  const stnkKnown = vehicle.stnkStatus === "active" && Boolean(vehicle.stnkFiveYearDue);
+  const stnkAlert: AlertItem = {
+    vehicle,
+    kind: "stnkFiveYear",
+    status: stnkKnown
+      ? documentStatus(vehicle.stnkFiveYearDue, 30)
+      : {
+          level: "unknown",
+          daysLeft: Number.POSITIVE_INFINITY,
+          label: vehicle.stnkStatus === "lost" ? "STNK hilang" : "STNK belum ada",
+        },
+    title: stnkKnown
+      ? documentTitle("stnkFiveYear")
+      : vehicle.stnkStatus === "lost" ? "STNK hilang · perlu ditindaklanjuti" : "STNK belum ada · perlu diurus",
+  };
 
   const kirKnown = vehicle.kirStatus === "active" && Boolean(vehicle.kirDue);
   const kirAlert: AlertItem = {
@@ -73,7 +93,7 @@ export const getVehicleAlerts = (vehicle: Vehicle): AlertItem[] => {
       : vehicle.kirStatus === "missing" ? "KIR belum dimiliki" : "KIR hilang · verifikasi tanggal",
   };
 
-  return [...documentAlerts, kirAlert]
+  return [annualTaxAlert, stnkAlert, kirAlert]
     .filter((item) => item.status.level !== "good")
     .sort((a, b) => a.status.daysLeft - b.status.daysLeft);
 };

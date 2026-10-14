@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { documentDate, documentStatus, formatDate, getVehicleAlerts } from "@/lib/dates";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { readDemoVehicles, writeDemoVehicles } from "@/lib/vehicles";
-import type { DocumentKind, KirStatus, Vehicle, VehicleInput } from "@/lib/types";
+import type { AnnualTaxStatus, DocumentKind, KirStatus, StnkStatus, Vehicle, VehicleInput } from "@/lib/types";
 
 type DbVehicle = {
   id: string;
@@ -16,8 +16,10 @@ type DbVehicle = {
   plate_number: string;
   color: string;
   photo_url: string | null;
-  annual_tax_due: string;
-  stnk_five_year_due: string;
+  annual_tax_due: string | null;
+  annual_tax_status: AnnualTaxStatus;
+  stnk_five_year_due: string | null;
+  stnk_status: StnkStatus;
   kir_status: KirStatus;
   kir_due: string | null;
   created_at: string;
@@ -31,7 +33,9 @@ const fromDb = (row: DbVehicle): Vehicle => ({
   color: row.color,
   photoUrl: row.photo_url,
   annualTaxDue: row.annual_tax_due,
+  annualTaxStatus: row.annual_tax_status ?? (row.annual_tax_due ? "known" : "unknown"),
   stnkFiveYearDue: row.stnk_five_year_due,
+  stnkStatus: row.stnk_status ?? (row.stnk_five_year_due ? "active" : "missing"),
   kirStatus: row.kir_status,
   kirDue: row.kir_due,
   createdAt: row.created_at,
@@ -45,7 +49,9 @@ const toDb = (vehicle: Vehicle) => ({
   color: vehicle.color,
   photo_url: vehicle.photoUrl,
   annual_tax_due: vehicle.annualTaxDue,
+  annual_tax_status: vehicle.annualTaxStatus,
   stnk_five_year_due: vehicle.stnkFiveYearDue,
+  stnk_status: vehicle.stnkStatus,
   kir_status: vehicle.kirStatus,
   kir_due: vehicle.kirDue,
 });
@@ -80,9 +86,13 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
   return <svg {...common}>{paths[name] ?? paths.grid}</svg>;
 }
 
-function StatusPill({ date, warningDays, kind, kirStatus }: { date: string | null; warningDays: number; kind: DocumentKind; kirStatus?: KirStatus }) {
-  const status = kind === "kir" && kirStatus && kirStatus !== "active"
+function StatusPill({ date, warningDays, kind, annualTaxStatus, kirStatus, stnkStatus }: { date: string | null; warningDays: number; kind: DocumentKind; annualTaxStatus?: AnnualTaxStatus; kirStatus?: KirStatus; stnkStatus?: StnkStatus }) {
+  const status = kind === "annualTax" && annualTaxStatus === "unknown"
+    ? { level: "unknown" as const, daysLeft: Number.POSITIVE_INFINITY, label: "Tanggal pajak belum diketahui" }
+    : kind === "kir" && kirStatus && kirStatus !== "active"
     ? { level: "unknown" as const, daysLeft: Number.POSITIVE_INFINITY, label: kirStatus === "missing" ? "Belum memiliki KIR" : "Tanggal tidak diketahui" }
+    : kind === "stnkFiveYear" && stnkStatus && stnkStatus !== "active"
+      ? { level: "unknown" as const, daysLeft: Number.POSITIVE_INFINITY, label: stnkStatus === "lost" ? "STNK hilang" : "STNK belum ada" }
     : documentStatus(date, warningDays);
   const icon = status.level === "good" ? "check" : status.level === "soon" ? "clock" : "bell";
   const label = kind === "kir" && status.level === "overdue" ? `URGENT · ${Math.abs(status.daysLeft)} hari` : status.label;
@@ -94,6 +104,10 @@ function VehicleForm({ vehicle, onClose, onSave }: { vehicle: Vehicle | null; on
   const [formError, setFormError] = useState("");
   const [preview, setPreview] = useState(vehicle?.photoUrl ?? "");
   const [clearPhoto, setClearPhoto] = useState(false);
+  const [annualTaxStatus, setAnnualTaxStatus] = useState<AnnualTaxStatus>(vehicle ? vehicle.annualTaxStatus ?? (vehicle.annualTaxDue ? "known" : "unknown") : "known");
+  const [annualTaxDue, setAnnualTaxDue] = useState(vehicle?.annualTaxDue ?? "");
+  const [stnkStatus, setStnkStatus] = useState<StnkStatus>(vehicle ? vehicle.stnkStatus ?? (vehicle.stnkFiveYearDue ? "active" : "missing") : "active");
+  const [stnkDue, setStnkDue] = useState(vehicle?.stnkFiveYearDue ?? "");
   const [kirStatus, setKirStatus] = useState<KirStatus>(vehicle?.kirStatus ?? (vehicle?.kirDue ? "active" : "missing"));
   const [kirDue, setKirDue] = useState(vehicle?.kirDue ?? "");
 
@@ -111,8 +125,10 @@ function VehicleForm({ vehicle, onClose, onSave }: { vehicle: Vehicle | null; on
         plateNumber: String(form.get("plateNumber") ?? "").trim().toUpperCase(),
         color: String(form.get("color") ?? "").trim(),
         photoUrl: clearPhoto ? null : vehicle?.photoUrl ?? null,
-        annualTaxDue: String(form.get("annualTaxDue") ?? ""),
-        stnkFiveYearDue: String(form.get("stnkFiveYearDue") ?? ""),
+        annualTaxDue: annualTaxStatus === "known" ? annualTaxDue : null,
+        annualTaxStatus,
+        stnkFiveYearDue: stnkStatus === "active" ? stnkDue : null,
+        stnkStatus,
         kirStatus,
         kirDue: kirStatus === "active" ? kirDue : null,
       }, file && file.size > 0 ? file : null);
@@ -146,10 +162,12 @@ function VehicleForm({ vehicle, onClose, onSave }: { vehicle: Vehicle | null; on
         </div>
         <div className="form-section-label document-section-label">Jadwal dokumen</div>
         <div className="form-grid date-grid">
-          <label className="field"><span>Pajak tahunan berikutnya <b>*</b></span><input name="annualTaxDue" type="date" defaultValue={vehicle?.annualTaxDue} required/><small>Peringatan otomatis 30 hari sebelumnya.</small></label>
-          <label className="field"><span>Perpanjangan STNK 5 tahunan <b>*</b></span><input name="stnkFiveYearDue" type="date" defaultValue={vehicle?.stnkFiveYearDue} required/><small>Termasuk penggantian pelat nomor.</small></label>
+          <label className="field"><span>Status tanggal pajak tahunan <b>*</b></span><select name="annualTaxStatus" value={annualTaxStatus} onChange={(event) => setAnnualTaxStatus(event.target.value as AnnualTaxStatus)}><option value="known">Tanggal diketahui</option><option value="unknown">Tanggal belum diketahui</option></select><small>Pilih belum diketahui jika dokumen pajak tidak tersedia.</small></label>
+          {annualTaxStatus === "known" ? <label className="field"><span>Pajak tahunan berikutnya <b>*</b></span><input name="annualTaxDue" type="date" value={annualTaxDue} onChange={(event) => setAnnualTaxDue(event.target.value)} required/><small>Peringatan otomatis 30 hari sebelumnya.</small></label> : <div className="document-note"><strong>Tanggal pajak tahunan belum diketahui</strong><small>Kendaraan tetap bisa disimpan dan akan muncul sebagai pengingat untuk memeriksa tanggal pajaknya.</small></div>}
+          <label className="field"><span>Status STNK 5 tahunan <b>*</b></span><select name="stnkStatus" value={stnkStatus} onChange={(event) => { const nextStatus = event.target.value as StnkStatus; setStnkStatus(nextStatus); if (nextStatus !== "active" && !annualTaxDue) setAnnualTaxStatus("unknown"); }}><option value="active">STNK tersedia dan tanggal diketahui</option><option value="lost">STNK hilang</option><option value="missing">STNK belum ada</option></select><small>Pilih kondisi dokumen STNK kendaraan.</small></label>
+          {stnkStatus === "active" ? <label className="field"><span>Perpanjangan STNK 5 tahunan <b>*</b></span><input name="stnkFiveYearDue" type="date" value={stnkDue} onChange={(event) => setStnkDue(event.target.value)} required/><small>Termasuk penggantian pelat nomor.</small></label> : <div className="document-note"><strong>{stnkStatus === "lost" ? "STNK hilang perlu ditindaklanjuti" : "STNK belum ada"}</strong><small>{stnkStatus === "lost" ? "Data kendaraan tetap bisa disimpan. Tanggal tidak dihitung sampai STNK ditemukan atau jadwal diperbarui." : "Data kendaraan tetap bisa disimpan dan status ini akan muncul sebagai pengingat."}</small></div>}
           <label className="field"><span>Status KIR <b>*</b></span><select name="kirStatus" value={kirStatus} onChange={(event) => setKirStatus(event.target.value as KirStatus)}><option value="active">Ada KIR dan tanggal diketahui</option><option value="missing">Belum memiliki KIR</option><option value="lost">KIR hilang, tanggal tidak diketahui</option></select><small>Pilih sesuai kondisi dokumen kendaraan.</small></label>
-          {kirStatus === "active" ? <label className="field"><span>Jatuh tempo KIR berikutnya <b>*</b></span><input name="kirDue" type="date" value={kirDue} onChange={(event) => setKirDue(event.target.value)} required/><small>Peringatan otomatis 7 hari sebelumnya.</small></label> : <div className="kir-note"><strong>{kirStatus === "missing" ? "KIR perlu diurus" : "Tanggal KIR perlu diverifikasi"}</strong><small>{kirStatus === "missing" ? "Data kendaraan tetap bisa disimpan tanpa tanggal KIR." : "Jadwal KIR tidak diketahui, jadi sistem tidak akan menganggapnya sudah kedaluwarsa."}</small></div>}
+          {kirStatus === "active" ? <label className="field"><span>Jatuh tempo KIR berikutnya <b>*</b></span><input name="kirDue" type="date" value={kirDue} onChange={(event) => setKirDue(event.target.value)} required/><small>Peringatan otomatis 7 hari sebelumnya.</small></label> : <div className="document-note"><strong>{kirStatus === "missing" ? "KIR perlu diurus" : "Tanggal KIR perlu diverifikasi"}</strong><small>{kirStatus === "missing" ? "Data kendaraan tetap bisa disimpan tanpa tanggal KIR." : "Jadwal KIR tidak diketahui, jadi sistem tidak akan menganggapnya sudah kedaluwarsa."}</small></div>}
         </div>
         {formError && <div className="form-error">{formError}</div>}
         <div className="modal-actions"><button type="button" className="button button-muted" onClick={onClose}>Batal</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? "Menyimpan…" : vehicle ? "Simpan perubahan" : "Simpan kendaraan"}</button></div>
@@ -324,7 +342,7 @@ export default function Dashboard() {
 
         <section className="stats-grid" aria-label="Ringkasan armada">
           <article className="stat-card"><div className="stat-top"><span className="stat-icon stat-icon-blue"><Icon name="truck"/></span><span className="stat-caption">TOTAL TERDAFTAR</span></div><div className="stat-value-row"><strong>{vehicles.length.toString().padStart(2, "0")}</strong><span className="stat-context">unit kendaraan</span></div><div className="stat-foot"><span className="stat-foot-dot blue-dot"/> Armada aktif dalam pengelolaan</div></article>
-          <article className="stat-card"><div className="stat-top"><span className="stat-icon stat-icon-amber"><Icon name="clock"/></span><span className="stat-caption">PERLU DITINDAKLANJUTI</span></div><div className="stat-value-row"><strong>{attentionCount.toString().padStart(2, "0")}</strong><span className="stat-context">dokumen perlu diperhatikan</span></div><div className="stat-foot"><span className="stat-foot-dot amber-dot"/> Jatuh tempo dekat atau data KIR belum lengkap</div></article>
+          <article className="stat-card"><div className="stat-top"><span className="stat-icon stat-icon-amber"><Icon name="clock"/></span><span className="stat-caption">PERLU DITINDAKLANJUTI</span></div><div className="stat-value-row"><strong>{attentionCount.toString().padStart(2, "0")}</strong><span className="stat-context">dokumen perlu diperhatikan</span></div><div className="stat-foot"><span className="stat-foot-dot amber-dot"/> Jatuh tempo dekat atau tanggal/status dokumen belum lengkap</div></article>
           <article className="stat-card"><div className="stat-top"><span className="stat-icon stat-icon-red"><Icon name="bell"/></span><span className="stat-caption">SUDAH TERLAMBAT</span></div><div className="stat-value-row"><strong>{overdueCount.toString().padStart(2, "0")}</strong><span className="stat-context">dokumen kedaluwarsa</span></div><div className="stat-foot"><span className="stat-foot-dot red-dot"/> Perlu tindak lanjut segera</div></article>
         </section>
 
@@ -341,8 +359,8 @@ export default function Dashboard() {
             <div className="table-scroll"><table><thead><tr><th>KENDARAAN</th><th>PAJAK TAHUNAN</th><th>STNK 5 TAHUNAN</th><th>KIR</th><th aria-label="Aksi"/></tr></thead><tbody>
               {filteredVehicles.map((vehicle) => <tr key={vehicle.id}>
                 <td><div className="vehicle-cell"><div className="vehicle-thumb">{vehicle.photoUrl ? <img src={vehicle.photoUrl} alt=""/> : <Icon name="truck" size={20}/>}</div><div><strong>{vehicle.brand} {vehicle.model}</strong><span>{vehicle.plateNumber} <i/> {vehicle.color}</span></div></div></td>
-                <td><div className="date-cell"><strong>{formatDate(vehicle.annualTaxDue)}</strong><StatusPill date={vehicle.annualTaxDue} warningDays={30} kind="annualTax"/></div></td>
-                <td><div className="date-cell"><strong>{formatDate(vehicle.stnkFiveYearDue)}</strong><StatusPill date={vehicle.stnkFiveYearDue} warningDays={30} kind="stnkFiveYear"/></div></td>
+                <td><div className="date-cell"><strong>{formatDate(vehicle.annualTaxDue)}</strong><StatusPill date={vehicle.annualTaxDue} warningDays={30} kind="annualTax" annualTaxStatus={vehicle.annualTaxStatus}/></div></td>
+                <td><div className="date-cell"><strong>{formatDate(vehicle.stnkFiveYearDue)}</strong><StatusPill date={vehicle.stnkFiveYearDue} warningDays={30} kind="stnkFiveYear" stnkStatus={vehicle.stnkStatus}/></div></td>
                 <td><div className="date-cell"><strong>{formatDate(vehicle.kirDue)}</strong><StatusPill date={vehicle.kirDue} warningDays={7} kind="kir" kirStatus={vehicle.kirStatus}/></div></td>
                 <td><div className="row-actions"><button type="button" className="icon-button" aria-label={`Edit ${vehicle.plateNumber}`} onClick={() => { setEditing(vehicle); setModalOpen(true); }}><Icon name="edit" size={17}/></button><button type="button" className="icon-button danger-hover" aria-label={`Hapus ${vehicle.plateNumber}`} onClick={() => void deleteVehicle(vehicle)}><Icon name="trash" size={17}/></button></div></td>
               </tr>)}
@@ -355,7 +373,7 @@ export default function Dashboard() {
             <div className="alert-list">{alerts.slice(0, 6).map((item, index) => <AlertRow key={`${item.vehicle.id}-${item.kind}`} item={item} index={index} onClick={() => { setEditing(item.vehicle); setModalOpen(true); }}/>)}</div>
             {alerts.length > 6 && <button className="view-all-button" onClick={() => { setFilter("attention"); document.getElementById("fleet")?.scrollIntoView({ behavior: "smooth" }); }}>Lihat semua {alerts.length} pengingat <Icon name="arrow" size={15}/></button>}
             {alerts.length === 0 && <div className="all-clear"><span><Icon name="check" size={19}/></span><strong>Semua dokumen aman</strong><p>Belum ada jadwal yang mendekati jatuh tempo.</p></div>}
-            <div className="alert-legend"><span><i className="legend-dot soon-dot"/> Segera jatuh tempo</span><span><i className="legend-dot expired-dot"/> Terlambat</span></div>
+            <div className="alert-legend"><span><i className="legend-dot soon-dot"/> Segera jatuh tempo</span><span><i className="legend-dot unknown-dot"/> Status perlu ditindaklanjuti</span><span><i className="legend-dot expired-dot"/> Terlambat</span></div>
           </aside>
         </section>
 
@@ -369,7 +387,12 @@ export default function Dashboard() {
 function AlertRow({ item, index, onClick }: { item: ReturnType<typeof getVehicleAlerts>[number]; index: number; onClick: () => void }) {
   const tone = item.status.level === "overdue" ? "alert-red" : "alert-amber";
   const icon = item.kind === "kir" ? "file" : "calendar";
-  const timing = item.status.level === "overdue" ? item.kind === "kir" ? `URGENT · ${Math.abs(item.status.daysLeft)} hari` : `Terlambat ${Math.abs(item.status.daysLeft)} hari` : item.status.level === "unknown" ? item.vehicle.kirStatus === "missing" ? "Urus KIR" : "Verifikasi" : item.status.daysLeft === 0 ? "Hari ini" : `${item.status.daysLeft} hari`;
+  const unknownAction = item.kind === "annualTax"
+    ? "Cek tanggal"
+    : item.kind === "kir"
+      ? item.vehicle.kirStatus === "missing" ? "Urus KIR" : "Verifikasi"
+      : item.vehicle.stnkStatus === "missing" ? "Urus STNK" : "Tindak lanjut";
+  const timing = item.status.level === "overdue" ? item.kind === "kir" ? `URGENT · ${Math.abs(item.status.daysLeft)} hari` : `Terlambat ${Math.abs(item.status.daysLeft)} hari` : item.status.level === "unknown" ? unknownAction : item.status.daysLeft === 0 ? "Hari ini" : `${item.status.daysLeft} hari`;
   const detail = item.status.level === "unknown" ? item.title : `${item.title} · ${formatDate(documentDate(item.vehicle, item.kind))}`;
   return <button type="button" className={`alert-row ${tone}`} style={{ animationDelay: `${index * 55}ms` }} onClick={onClick}><span className="alert-row-icon"><Icon name={icon} size={17}/></span><span className="alert-row-copy"><strong>{item.vehicle.plateNumber}</strong><small>{detail}</small></span><span className="alert-row-status">{timing}</span><Icon name="arrow" size={15}/></button>;
 }

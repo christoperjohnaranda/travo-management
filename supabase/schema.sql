@@ -8,8 +8,10 @@ create table if not exists public.vehicles (
   plate_number text not null unique,
   color text not null,
   photo_url text,
-  annual_tax_due date not null,
-  stnk_five_year_due date not null,
+  annual_tax_due date,
+  annual_tax_status text not null default 'known',
+  stnk_five_year_due date,
+  stnk_status text not null default 'active',
   kir_status text not null default 'active',
   kir_due date,
   created_at timestamptz not null default now(),
@@ -18,6 +20,22 @@ create table if not exists public.vehicles (
 );
 
 -- Dapat dijalankan ulang untuk memperbarui proyek yang tabel kendaraannya sudah dibuat.
+alter table public.vehicles add column if not exists annual_tax_status text not null default 'known';
+alter table public.vehicles alter column annual_tax_due drop not null;
+alter table public.vehicles drop constraint if exists vehicles_annual_tax_status_date_check;
+alter table public.vehicles add constraint vehicles_annual_tax_status_date_check check (
+  (annual_tax_status = 'known' and annual_tax_due is not null)
+  or (annual_tax_status = 'unknown' and annual_tax_due is null)
+);
+
+alter table public.vehicles add column if not exists stnk_status text not null default 'active';
+alter table public.vehicles alter column stnk_five_year_due drop not null;
+alter table public.vehicles drop constraint if exists vehicles_stnk_status_date_check;
+alter table public.vehicles add constraint vehicles_stnk_status_date_check check (
+  (stnk_status = 'active' and stnk_five_year_due is not null)
+  or (stnk_status in ('missing', 'lost') and stnk_five_year_due is null)
+);
+
 alter table public.vehicles add column if not exists kir_status text not null default 'active';
 alter table public.vehicles alter column kir_due drop not null;
 alter table public.vehicles drop constraint if exists vehicles_kir_status_date_check;
